@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090f">
+<title>Legend Assistant</title>
+<style>
+  :root {
+    --bg: #07090f; --glass: rgba(255,255,255,.06); --glass-2: rgba(255,255,255,.10);
+    --border: rgba(255,255,255,.12); --text: #eef2ff; --muted: #8b93ab;
+    --cyan: #5ee7ff; --violet: #a78bfa; --pink: #f472b6; --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); overflow: hidden; display: flex; flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Noto Sans", sans-serif;
+  }
+  .aurora { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+  .aurora span { position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; opacity: .35; }
+  .aurora span:nth-child(1) { background: radial-gradient(circle, var(--cyan), transparent 65%); top: -20vmax; left: -15vmax; }
+  .aurora span:nth-child(2) { background: radial-gradient(circle, var(--violet), transparent 65%); bottom: -25vmax; right: -20vmax; animation-delay: -6s; }
+  .aurora span:nth-child(3) { background: radial-gradient(circle, var(--pink), transparent 65%); top: 30%; left: 40%; width: 40vmax; height: 40vmax; opacity: .2; animation-delay: -12s; }
+  @keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(6vmax,4vmax) scale(1.15); } }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    background: rgba(7,9,15,.5); border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .logo { width: 34px; height: 34px; border-radius: 11px; background: linear-gradient(135deg, var(--cyan), var(--violet)); display: grid; place-items: center; font-weight: 800; color: #04101a; box-shadow: 0 6px 20px rgba(94,231,255,.3); }
+  .brand h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
+  .brand small { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
+  .status-pill { font-size: 12px; padding: 6px 10px; border-radius: 999px; background: var(--glass); border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .status-pill.live { color: var(--ok); border-color: rgba(52,211,153,.4); }
+
+  .cam { display: none; margin: 10px 14px 0; border-radius: 20px; overflow: hidden; position: relative; border: 1px solid rgba(94,231,255,.3); aspect-ratio: 4/3; max-height: 38vh; background: #000; }
+  .cam.open { display: block; }
+  .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cam .tag { position: absolute; top: 10px; left: 10px; font-size: 11px; font-weight: 700; color: #fff; background: rgba(248,113,113,.85); padding: 4px 9px; border-radius: 999px; letter-spacing: .5px; }
+  .cam .btn { position: absolute; bottom: 10px; right: 10px; }
+
+  #chat { flex: 1; overflow-y: auto; padding: 16px 14px 12px; display: flex; flex-direction: column; gap: 14px; }
+  .row-msg { display: flex; gap: 8px; align-items: flex-end; }
+  .row-msg.user { justify-content: flex-end; }
+  .avatar { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 50%; background: linear-gradient(135deg, var(--cyan), var(--violet)); display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #04101a; }
+  .bubble { max-width: 78%; padding: 12px 15px; border-radius: 20px; line-height: 1.5; font-size: 15px; white-space: pre-wrap; word-wrap: break-word; animation: rise .3s ease both; }
+  .user .bubble { background: linear-gradient(135deg, rgba(94,231,255,.22), rgba(167,139,250,.22)); border: 1px solid rgba(94,231,255,.25); border-bottom-right-radius: 6px; }
+  .bot .bubble { background: var(--glass-2); border: 1px solid var(--border); border-bottom-left-radius: 6px; }
+  .sys-note { align-self: center; font-size: 12px; color: var(--muted); background: var(--glass); border: 1px solid var(--border); padding: 6px 12px; border-radius: 999px; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .action-card { margin-left: 36px; max-width: 80%; background: linear-gradient(160deg, rgba(94,231,255,.10), rgba(244,114,182,.08)); border: 1px solid rgba(94,231,255,.28); border-radius: 18px; padding: 14px; animation: rise .3s ease both; }
+  .action-card .k { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--cyan); }
+  .action-card .v { font-size: 14px; margin: 6px 0 12px; word-break: break-word; white-space: pre-line; }
+  .action-card .btns { display: flex; gap: 8px; }
+
+  .btn { border: 1px solid var(--border); background: var(--glass); color: var(--text); padding: 9px 14px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; transition: transform .12s; }
+  .btn:active { transform: scale(.96); }
+  .btn:disabled { opacity: .5; }
+  .btn.primary { background: linear-gradient(135deg, var(--cyan), var(--violet)); color: #04101a; border: none; }
+  .btn.ghost { background: transparent; }
+  .btn.small { padding: 6px 11px; font-size: 12px; border-radius: 10px; }
+
+  .dock { padding: 12px 14px calc(14px + env(safe-area-inset-bottom, 0px)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background: rgba(7,9,15,.6); border-top: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .input-row { display: flex; gap: 8px; width: 100%; max-width: 640px; }
+  #input { flex: 1; min-width: 0; background: var(--glass); color: var(--text); border: 1px solid var(--border); border-radius: 16px; padding: 13px 15px; font-size: 15px; outline: none; }
+  #input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(94,231,255,.15); }
+  .send { width: 50px; border-radius: 16px; border: none; cursor: pointer; font-size: 18px; background: linear-gradient(135deg, var(--cyan), var(--violet)); color: #04101a; }
+
+  .mic-wrap { position: relative; width: 84px; height: 84px; display: grid; place-items: center; }
+  .mic-ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(94,231,255,.5); opacity: 0; pointer-events: none; }
+  .mic-wrap.active .mic-ring { animation: ring 1.6s ease-out infinite; }
+  .mic-wrap.active .mic-ring:nth-child(2) { animation-delay: .8s; }
+  @keyframes ring { 0% { transform: scale(.9); opacity: .9; } 100% { transform: scale(1.6); opacity: 0; } }
+  .mic { width: 70px; height: 70px; border-radius: 50%; border: none; cursor: pointer; font-size: 28px; color: #04101a; background: radial-gradient(circle at 30% 25%, #ffffff55, transparent 40%), linear-gradient(135deg, var(--cyan), var(--violet)); box-shadow: 0 10px 40px rgba(94,231,255,.35); transition: transform .15s; }
+  .mic:active { transform: scale(.94); }
+  .mic.listening { background: radial-gradient(circle at 30% 25%, #ffffff55, transparent 40%), linear-gradient(135deg, var(--pink), var(--violet)); }
+
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; justify-content: center; }
+  .chip { font-size: 13px; padding: 8px 12px; border-radius: 999px; cursor: pointer; background: var(--glass); border: 1px solid var(--border); color: var(--text); }
+  .chip.on { background: rgba(94,231,255,.15); border-color: rgba(94,231,255,.5); color: var(--cyan); }
+  select.chip { appearance: none; -webkit-appearance: none; padding-right: 22px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 12px) 52%, calc(100% - 7px) 52%; background-size: 5px 5px; background-repeat: no-repeat; }
+  select.chip option { background: #0d1220; color: var(--text); }
+
+  .overlay { position: fixed; inset: 0; z-index: 50; display: none; background: rgba(4,6,11,.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); align-items: flex-end; justify-content: center; }
+  .overlay.open { display: flex; }
+  .sheet { width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; background: #0d1220; border: 1px solid var(--border); border-bottom: none; border-radius: 26px 26px 0 0; padding: 22px 18px calc(22px + env(safe-area-inset-bottom, 0px)); animation: slideUp .35s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .sheet h2 { margin: 0 0 6px; font-size: 20px; }
+  .sheet p.lead { margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .perm { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--glass); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 9px; }
+  .perm .ico { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 13px; display: grid; place-items: center; font-size: 20px; background: rgba(255,255,255,.07); }
+  .perm .txt { flex: 1; min-width: 0; }
+  .perm .txt b { font-size: 15px; display: block; }
+  .perm .txt span { font-size: 12px; color: var(--muted); }
+  .badge { font-size: 11px; padding: 4px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
+  .badge.granted { color: var(--ok); border-color: rgba(52,211,153,.4); }
+  .badge.denied { color: var(--bad); border-color: rgba(248,113,113,.4); }
+  .badge.unsupported { color: var(--warn); border-color: rgba(251,191,36,.4); }
+  .sheet .footer { display: flex; gap: 10px; margin-top: 16px; }
+  .sheet .footer .btn { flex: 1; text-align: center; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="aurora"><span></span><span></span><span></span></div>
+
+<header>
+  <div class="brand">
+    <div class="logo">L</div>
+    <div><h1>Legend Assistant</h1><small>Voice · Camera · Multilingual</small></div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <div class="status-pill" id="status">Ready</div>
+    <button class="btn small" id="clearBtn">Clear</button>
+  </div>
+</header>
+
+<div class="cam" id="camPanel">
+  <video id="video" playsinline muted autoplay></video>
+  <div class="tag">● CAMERA</div>
+  <button class="btn small" id="camOff">Close camera</button>
+</div>
+<canvas id="snap" class="hidden"></canvas>
+
+<div id="chat">
+  <div class="sys-note">Tap the mic once to keep it on, tap again to turn it off. Try: "set alarm at 6:30 am", "call 98xxxxxxxx", "open YouTube", "my name is …".</div>
+  <div class="row-msg bot">
+    <div class="avatar">L</div>
+    <div class="bubble">Hi, I'm Legend. I can talk with you, look through your camera and describe what you show me, and reply in many languages. Tap Permissions to allow what you need.</div>
+  </div>
+</div>
+
+<div class="dock">
+  <div class="input-row">
+    <input id="input" placeholder="Ask Legend anything…" autocomplete="off">
+    <button class="send" id="sendBtn" aria-label="Send">➤</button>
+  </div>
+  <div class="mic-wrap" id="micWrap">
+    <span class="mic-ring"></span><span class="mic-ring"></span>
+    <button class="mic" id="micBtn" aria-label="Speak">🎤</button>
+  </div>
+  <div class="chips">
+    <button class="chip" id="liveBtn">Live: Off</button>
+    <button class="chip" id="camChip">Camera: Off</button>
+    <button class="chip on" id="voiceBtn">Voice reply: On</button>
+    <select class="chip" id="langSel" aria-label="Reply language"></select>
+    <button class="chip" id="stopBtn">Stop</button>
+    <button class="chip" id="permBtn">Permissions</button>
+  </div>
+</div>
+
+<input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden">
+
+<div class="overlay" id="permOverlay">
+  <div class="sheet">
+    <h2>Device permissions</h2>
+    <p class="lead">Legend asks for each permission one at a time. Nothing turns on without your tap. You can skip any of them and change your mind later.</p>
+    <div id="permList"></div>
+    <div class="footer">
+      <button class="btn ghost" id="permClose">Close</button>
+      <button class="btn primary" id="permDone">Done</button>
+    </div>
+    <p class="note">Legend runs in your browser, so it can only use what the browser allows. It cannot read other apps, messages, or system settings on its own.</p>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ================= CONFIG =================
+  const WORKER_URL = "https://legend-ai.harshanoob87093.workers.dev"; // Your server holds the Gemini key
+  const MODEL = "gemini-3.8-flash";
+
+  const LANGS = {
+    english:   { name: "English",   code: "en-US" },
+    kannada:   { name: "Kannada",   code: "kn-IN" },
+    hindi:     { name: "Hindi",     code: "hi-IN" },
+    tamil:     { name: "Tamil",     code: "ta-IN" },
+    telugu:    { name: "Telugu",    code: "te-IN" },
+    malayalam: { name: "Malayalam", code: "ml-IN" },
+    marathi:   { name: "Marathi",   code: "mr-IN" },
+    bengali:   { name: "Bengali",   code: "bn-IN" },
+    gujarati:  { name: "Gujarati",  code: "gu-IN" },
+    spanish:   { name: "Spanish",   code: "es-ES" },
+    french:    { name: "French",    code: "fr-FR" },
+    german:    { name: "German",    code: "de-DE" },
+    japanese:  { name: "Japanese",  code: "ja-JP" },
+    chinese:   { name: "Chinese",   code: "zh-CN" },
+    arabic:    { name: "Arabic",    code: "ar-SA" }
+  };
+
+  const BASE_SYSTEM = `You are Legend, a fast, accurate voice assistant on the user's phone. Reply in 1-2 short sentences unless asked for detail. Never identify real people from faces. If a camera image is attached, answer about it directly.
+Reply with ONE JSON object only: {"say":"<short reply>","action":null OR {"type":"...",...}}
+Use an action only when asked to do something. Actions: open_url{url} search{query} map{query} call{number} sms{number,body} whatsapp{number,body} email{to,subject,body} alarm{hour 0-23,minute,label} timer{seconds,label} open_app{name} flashlight{on true/false} share{text} copy{text} notify{title,body} vibrate{} battery{} location{} photo{} remember{fact} set_name{name}
+Rules: when a number is given for call/sms/whatsapp, act immediately; body may be empty; never ask what to send; use the number as given. If only a name is given, look it up in the known facts; if no number is known, ask for it (action null). Never invent numbers or emails. To play or search YouTube use open_url with https://www.youtube.com/results?search_query=...
+When the user tells you their name or any personal fact or preference, save it with remember (and set_name for a name) and answer warmly using their name.`;
+
+  // ================= HELPERS =================
+  const $ = id => document.getElementById(id);
+  const chat = $("chat"), input = $("input"), statusEl = $("status"), micBtn = $("micBtn"), micWrap = $("micWrap");
+  const liveBtn = $("liveBtn"), voiceBtn = $("voiceBtn"), camChip = $("camChip"), camPanel = $("camPanel");
+  const video = $("video"), snap = $("snap"), langSel = $("langSel");
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+
+  let history = [], liveMode = false, voiceReply = true, busy = false, wakeLock = null;
+  let curLang = store.get("legend_lang", "english");
+  let camStream = null, cameraOn = false, observeTimer = null, lastNote = "";
+
+  for (const [key, v] of Object.entries(LANGS)) {
+    const o = document.createElement("option"); o.value = key; o.textContent = v.name; langSel.appendChild(o);
+  }
+  langSel.value = curLang;
+  langSel.onchange = () => setLang(langSel.value);
+
+  function setLang(key) {
+    if (!LANGS[key]) return;
+    curLang = key; langSel.value = key; store.set("legend_lang", key);
+    addNote(`Replies: ${LANGS[key].name}`);
+  }
+
+  function setStatus() {
+    const parts = [];
+    if (cameraOn) parts.push("Camera");
+    parts.push(micOn ? "Listening" : "Ready");
+    statusEl.textContent = parts.join(" · ");
+    statusEl.classList.toggle("live", micOn || cameraOn);
+  }
+  function scrollDown() { chat.scrollTop = chat.scrollHeight; }
+  // The chat is saved on this device so it survives reloads.
+  let log = [];
+  try { log = JSON.parse(store.get("legend_log", "[]")) || []; } catch { log = []; }
+  function persist() {
+    store.set("legend_log", JSON.stringify(log.slice(-80)));
+    store.set("legend_history", JSON.stringify(history.slice(-30)));
+  }
+  function render(e) {
+    const r = document.createElement("div");
+    if (e.k === "n") { r.className = "sys-note"; r.textContent = e.t; }
+    else {
+      r.className = "row-msg " + (e.k === "u" ? "user" : "bot");
+      r.innerHTML = (e.k === "u" ? "" : '<div class="avatar">L</div>') + '<div class="bubble"></div>';
+      r.querySelector(".bubble").textContent = e.t;
+    }
+    chat.appendChild(r);
+  }
+  function push(k, t) { const e = { k, t }; log.push(e); render(e); scrollDown(); persist(); }
+  function addBot(text) { push("b", text); }
+  function addUser(text) { push("u", text); }
+  function addNote(text) { push("n", text); }
+
+  // ================= SPEECH OUT =================
+  const synth = window.speechSynthesis || null;
+  let lastSpoken = "", voiceCache = {}, obsBusy = false, reqId = 0, ctrl = null;
+  if (synth) synth.onvoiceschanged = () => { voiceCache = {}; };
+  // True when the heard text is just Legend's own voice coming back into the mic.
+  function isEcho(t) {
+    const w = t.toLowerCase().split(/\W+/).filter(Boolean);
+    if (w.length < 3 || !lastSpoken) return false;
+    const spoken = new Set(lastSpoken.toLowerCase().split(/\W+/));
+    return w.filter(x => spoken.has(x)).length / w.length > 0.6;
+  }
+  function pickVoice(code) {
+    if (!synth) return null;
+    if (voiceCache[code]) return voiceCache[code];
+    const p = code.slice(0, 2).toLowerCase();
+    return (voiceCache[code] = synth.getVoices().find(x => x.lang.replace("_", "-").toLowerCase().startsWith(p)) || null);
+  }
+  function stopSpeech() { if (synth) synth.cancel(); }
+  // Cancels the running request and speech so a new question can start instantly.
+  function interrupt() { reqId++; if (ctrl) { ctrl.abort(); ctrl = null; } stopSpeech(); busy = false; setStatus(); }
+  // Speaks sentence by sentence so the first words start sooner.
+  function speak(text, lang) {
+    lastSpoken = text || "";
+    if (!voiceReply || !synth || !text) return;
+    synth.cancel();
+    const code = lang || LANGS[curLang].code, voice = pickVoice(code);
+    const parts = String(text).replace(/[*#`_]/g, "").match(/[^.!?।\n]+[.!?।]*/g) || [String(text)];
+    const list = parts.map(x => x.trim()).filter(Boolean);
+    list.forEach((x, i) => {
+      const u = new SpeechSynthesisUtterance(x);
+      u.lang = code; if (voice) u.voice = voice; u.rate = 1.1; u.volume = 1;
+      if (i === list.length - 1) u.onend = () => setTimeout(() => { if (lastSpoken === text) lastSpoken = ""; }, 900);
+      synth.speak(u);
+    });
+  }
+  $("stopBtn").onclick = () => { if (ringing) ringing.end(false); interrupt(); };
+
+  // ================= SPEECH IN (always-on mic) =================
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let micOn = false, recog = null, errCount = 0;
+
+  function syncMic() {
+    liveMode = micOn;
+    micBtn.classList.toggle("listening", micOn); micWrap.classList.toggle("active", micOn);
+    liveBtn.textContent = "Live: " + (micOn ? "On" : "Off"); liveBtn.classList.toggle("on", micOn);
+    setStatus();
+  }
+  async function keepAwake() { try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch {} }
+
+  // Continuous recognition: it keeps listening, sends each finished sentence at once, and restarts itself if the browser ends the session.
+  function startRecog() {
+    if (!micOn || recog) return;
+    const r = recog = new SR();
+    r.lang = LANGS[curLang].code; r.continuous = true; r.interimResults = true;
+    let handled = 0;
+    r.onresult = e => {
+      errCount = 0; let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (!e.results[i].isFinal) { interim += t; continue; }
+        if (i < handled) continue;
+        handled = i + 1;
+        const s = t.trim();
+        if (s && !isEcho(s)) send(s);
+      }
+      input.value = interim.trim();
+      // Barge-in: the user talks over Legend, so Legend stops speaking.
+      if (interim.trim().split(/\s+/).length >= 2 && synth && synth.speaking && !isEcho(interim)) stopSpeech();
+    };
+    r.onerror = e => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { addNote("Microphone is blocked. Allow it in Permissions, then tap the mic."); setMic(false); }
+      else if (e.error === "network" && ++errCount === 3) addNote("Voice service connection problem. Still retrying…");
+    };
+    r.onend = () => { if (recog === r) recog = null; if (micOn) setTimeout(startRecog, errCount > 2 ? 1500 : 100); };
+    try { r.start(); } catch { recog = null; if (micOn) setTimeout(startRecog, 500); }
+  }
+  function setMic(on) {
+    if (on && !SR) { addNote("Voice input needs Chrome or Edge. You can type instead."); on = false; }
+    micOn = on;
+    if (on) { startRecog(); keepAwake(); }
+    else {
+      const r = recog; recog = null; input.value = "";
+      if (r) { r.onend = null; try { r.abort(); } catch {} }
+      if (wakeLock && !alarms.length) { try { wakeLock.release(); } catch {} wakeLock = null; }
+    }
+    syncMic();
+  }
+  micBtn.onclick = () => {
+    // Tap while Legend is thinking or speaking: interrupt it. The mic stays on for your next question.
+    if (micOn && (busy || (synth && synth.speaking))) { interrupt(); return; }
+    if (!micOn) interrupt();
+    setMic(!micOn);
+  };
+
+  // Finds the reply text in any common response shape.
+  function extractText(d) {
+    if (!d) return "";
+    if (typeof d === "string") return d.trim();
+    if (typeof d.response === "string") return d.response.trim();
+    if (typeof d.text === "string") return d.text.trim();
+    if (typeof d.output_text === "string") return d.output_text.trim();
+    const msg = d.choices?.[0]?.message?.content ?? d.choices?.[0]?.text;
+    if (typeof msg === "string") return msg.trim();
+    if (Array.isArray(msg)) return msg.map(p => p.text || "").join("").trim();
+    if (Array.isArray(d.output)) {
+      const t = d.output.flatMap(o => o.content || []).map(c => c.text || "").join("");
+      if (t) return t.trim();
+    }
+    if (d.result) return extractText(d.result);
+    return "";
+  }
+
+  // ================= MODEL =================
+  function memoryLine() {
+    const f = profile.facts.join("; ").slice(-1200);
+    return `\nUser's name: ${profile.name || "unknown"}.${f ? " Known facts: " + f + "." : ""}\nReply in ${LANGS[curLang].name} unless the user asks otherwise.`;
+  }
+  async function callModel({ text, image = null, useHistory = true, signal }) {
+    let instruction = BASE_SYSTEM + memoryLine() + "\n\nUser: " + text;
+    if (image) instruction += "\n(A live camera image is attached. Answer in one or two short sentences.)";
+    const toText = c => (c.parts || []).map(p => p.text || "").join("");
+    const past = useHistory ? history.slice(-8) : [];
+    const messages = past.map(c => ({ role: c.role === "model" ? "assistant" : "user", content: toText(c) }));
+    messages.push({ role: "user", content: instruction });
+    const name = profile.name || "friend";
+    const endpoint = image ? "/api/images" : "/api/chat";
+    const payload = image
+      ? { images: ["data:image/jpeg;base64," + image], question: instruction, playerName: name }
+      : { messages, playerName: name };
+
+    let res;
+    for (let tries = 0; ; tries++) {
+      try {
+        res = await fetch(WORKER_URL + endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal });
+        break;
+      } catch (err) { if (err.name === "AbortError" || tries >= 1) throw err; await new Promise(r => setTimeout(r, 250)); }
+    }
+    let data = {};
+    try { data = await res.json(); } catch { throw new Error("Server returned an unexpected response (HTTP " + res.status + ")."); }
+    if (!res.ok) throw new Error(data?.error || ("HTTP " + res.status));
+    const raw = extractText(data);
+    if (!raw) throw new Error("The AI returned no text. Server said: " + JSON.stringify(data).slice(0, 300));
+    let parsed;
+    try { parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|```$/g, "")); }
+    catch {
+      const m = raw.match(/\{[\s\S]*\}/);
+      try { parsed = m ? JSON.parse(m[0]) : { say: raw, action: null }; }
+      catch { parsed = { say: raw, action: null }; }
+    }
+    const say = parsed.say || "", action = parsed.action || null;
+    if (useHistory) {
+      history.push({ role: "user", parts: [{ text: image ? "[camera image] " + text : text }] });
+      history.push({ role: "model", parts: [{ text: say || raw }] });
+      persist();
+    }
+    return { say, action };
+  }
+
+  // ================= CAMERA =================
+  function grabFrame() {
+    if (!video.videoWidth) return null;
+    const w = Math.min(video.videoWidth, 320), h = Math.round(w * video.videoHeight / video.videoWidth);
+    snap.width = w; snap.height = h;
+    snap.getContext("2d").drawImage(video, 0, 0, w, h);
+    return snap.toDataURL("image/jpeg", 0.55).split(",")[1];
+  }
+
+  async function startCamera() {
+    if (cameraOn) return;
+    if (!navigator.mediaDevices?.getUserMedia) { addNote("Camera isn't supported in this browser."); return; }
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      video.srcObject = camStream;
+      await video.play();
+      cameraOn = true;
+      camPanel.classList.add("open");
+      camChip.classList.add("on"); camChip.textContent = "Camera: On";
+      setStatus();
+      addNote("Camera on. Ask me about what you show.");
+      observeTimer = setInterval(observe, 8000);
+    } catch {
+      addNote("Camera permission was denied. Allow it in Permissions.");
+    }
+  }
+
+  function stopCamera() {
+    if (camStream) camStream.getTracks().forEach(t => t.stop());
+    camStream = null; cameraOn = false;
+    clearInterval(observeTimer); observeTimer = null;
+    camPanel.classList.remove("open");
+    camChip.classList.remove("on"); camChip.textContent = "Camera: Off";
+    setStatus();
+    addNote("Voice mode.");
+  }
+
+  // Periodic look at the live camera. Speaks only when something new is worth mentioning.
+  async function observe() {
+    if (!cameraOn || busy || obsBusy || synth.speaking || input.value) return;
+    const img = grabFrame(); if (!img) return;
+    obsBusy = true;
+    try {
+      const { say } = await callModel({
+        text: `Live camera check. If something new or important is visible compared with your last note ("${lastNote}"), briefly describe it in the reply language. If nothing noteworthy changed, return an empty say.`,
+        image: img, useHistory: false
+      });
+      if (say && !busy) { lastNote = say; addBot("👁 " + say); speak(say); }
+    } catch {}
+    obsBusy = false;
+  }
+
+  camChip.onclick = () => cameraOn ? stopCamera() : startCamera();
+  $("camOff").onclick = stopCamera;
+
+  // ================= MEMORY =================
+  let profile = { name: "", facts: [] };
+  try { profile = Object.assign(profile, JSON.parse(store.get("legend_profile", "{}"))); if (!Array.isArray(profile.facts)) profile.facts = []; } catch {}
+  const saveProfile = () => store.set("legend_profile", JSON.stringify(profile));
+  function setName(n) { n = String(n || "").trim().slice(0, 40); if (!n) return; profile.name = n; saveProfile(); addNote("Saved: your name is " + n); }
+  function remember(f) {
+    f = String(f || "").trim().slice(0, 200);
+    if (!f || profile.facts.includes(f)) return;
+    profile.facts = profile.facts.concat(f).slice(-60); saveProfile(); addNote("Remembered: " + f);
+  }
+
+  // ================= LOCAL VOICE COMMANDS (instant, no AI wait) =================
+  const ANDROID = /android/i.test(navigator.userAgent);
+  const APPS = {
+    whatsapp: "whatsapp://send", youtube: "https://www.youtube.com", instagram: "https://www.instagram.com", facebook: "https://www.facebook.com",
+    telegram: "tg://resolve", spotify: "spotify:", maps: "https://www.google.com/maps", "google maps": "https://www.google.com/maps",
+    gmail: "https://mail.google.com", google: "https://www.google.com", chrome: "https://www.google.com", "play store": "market://search?q=apps",
+    settings: "intent:#Intent;action=android.settings.SETTINGS;end"
+  };
+  const SAFE_APP_URL = /^(https:|whatsapp:|tg:|spotify:|market:|geo:|intent:#Intent;action=android\.(settings\.|media\.))/i;
+  const NUMRE = /(\+?\d[\d\s-]{6,16}\d)/;
+  const say = (s, action = null) => ({ say: s, action, local: true });
+  const fmtTime = (h, m) => `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+
+  function parseTime(s) {
+    const m = s.match(/(?:at|for|by|to)\s+(\d{1,2})(?:\s*[:.]\s*(\d{2})|\s+(\d{2}))?\s*(?:o'?clock)?\s*(?:([ap])\.?\s?m\b)?/);
+    if (!m) return null;
+    let h = +m[1]; const mi = +(m[2] || m[3] || 0), ap = m[4];
+    if (h > 23 || mi > 59) return null;
+    if (ap === "p" && h < 12) h += 12;
+    else if (ap === "a" && h === 12) h = 0;
+    else if (!ap && h < 12 && /\b(evening|night|afternoon|tonight)\b/.test(s)) h += 12;
+    return [h, mi];
+  }
+
+  const STOPW = new Set("number phone mobile contact cell call dial text sms message whatsapp saying say that the and for his her their open send save remember please".split(" "));
+  // Finds a saved number by name, e.g. after "remember that mom's number is 99...".
+  function contactNumber(low) {
+    for (const f of profile.facts) {
+      const n = (f.match(NUMRE) || [])[1]; if (!n) continue;
+      const words = f.toLowerCase().replace(NUMRE, " ").split(/[^\p{L}]+/u).filter(w => w.length > 2 && !STOPW.has(w));
+      if (words.some(w => new RegExp("\\b" + w + "\\b").test(low))) return n;
+    }
+    return null;
+  }
+  const NW = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50 };
+  const numWords = x => x.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty)\b/g, w => NW[w]);
+  function nextAt(h, m, tomorrow) { const d = new Date(); d.setHours(h, m, 0, 0); if (tomorrow || d <= Date.now()) d.setDate(d.getDate() + 1); return +d; }
+  function calc(low) {
+    const e = low.replace(/^(?:what(?:'s| is)|calculate|how much is|solve|compute)\s+/, "").replace(/[?=]+$/, "").replace(/,/g, "")
+      .replace(/(\d+(?:\.\d+)?)\s*(?:percent|%)\s*of\s*(\d+(?:\.\d+)?)/g, "($1/100*$2)")
+      .replace(/\bplus\b/g, "+").replace(/\bminus\b/g, "-").replace(/\b(?:times|multiplied by|into)\b/g, "*").replace(/\b(?:divided by|over)\b|÷/g, "/")
+      .replace(/(\d)\s*[x×]\s*(?=\d)/g, "$1*");
+    if (!/^[\d.\s+\-*/()]+$/.test(e) || !/\d\s*[-+*/]\s*\(?\s*\d/.test(e)) return null;
+    try { const v = Function('"use strict";return (' + e + ")")(); if (typeof v === "number" && isFinite(v)) return Math.round(v * 1e8) / 1e8; } catch {}
+    return null;
+  }
+
+  // Returns a ready reply+action for simple commands, or null so the AI handles it.
+  function cmd(t) {
+    const low = t.toLowerCase(); let m;
+    const num = (t.match(NUMRE) || [])[1] || (/\b(call|dial|phone|whatsapp|sms|text|message)\b/.test(low) ? contactNumber(low) : null);
+    const body = () => { const b = t.match(/\b(?:saying|say|that says|message is|with message|text is|:)\s*(.+)$/i); return b ? b[1].trim() : ""; };
+    const lw = numWords(low);
+    if (/\b(alarm|timer|wake me|remind me)\b/.test(lw)) {
+      const dm = lw.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)\b/);
+      const rm = lw.match(/remind me (?:to |about |that )?(.+?)\s+(?:in|after|at|by|tomorrow)\b/);
+      const kind = /remind/.test(lw) ? "Reminder" : /timer/.test(lw) ? "Timer" : "Alarm", label = rm ? rm[1] : kind;
+      if (dm) { const secs = Math.round(+dm[1] * (dm[2][0] === "h" ? 3600 : dm[2][0] === "m" ? 60 : 1)); return say(`${kind} set for ${dm[1]} ${dm[2]}.`, { type: "alarm", at: Date.now() + secs * 1000, label }); }
+      const T = parseTime(lw);
+      if (T) return say(`${kind} set for ${fmtTime(T[0], T[1])}.`, { type: "alarm", at: nextAt(T[0], T[1], /\btomorrow\b/.test(lw)), label });
+    }
+    if (/\b(wi-?fi|bluetooth|hotspot|airplane mode|flight mode|mobile data|brightness|volume|do not disturb)\b/.test(low) && /\b(turn|switch|toggle|enable|disable|open|increase|decrease|raise|lower|set|put|on|off|up|down)\b/.test(low))
+      return say("Browsers can't change that setting, so I'm opening Settings for you.", { type: "open_app", name: "settings", url: APPS.settings });
+    const c = calc(low); if (c !== null) return say(`The answer is ${c}.`);
+    if (/^(?:hi|hello|hey|hii|hai)(?: legend)?[.!]?$/.test(low)) return say(profile.name ? `Hello ${profile.name}! How can I help?` : "Hello! How can I help?");
+    if (/^who are you\??$/.test(low)) return say("I'm Legend, your voice assistant.");
+    if (/\b(where am i|where i am|my (?:current )?location|my address|current location)\b/.test(low)) return say("Checking your location.", { type: "location" });
+    if ((m = low.match(/^(?:please\s+)?(?:navigate|directions?|route|take me)\s+(?:to\s+)?(.+)$/))) return say(`Getting directions to ${m[1]}.`, { type: "open_url", url: "https://www.google.com/maps/dir/?api=1&destination=" + q(m[1]) });
+    if ((m = low.match(/^(?:please\s+)?play\s+(.+?)(?:\s+on\s+(youtube|spotify))?$/)))
+      return m[2] === "spotify" ? say(`Searching ${m[1]} on Spotify.`, { type: "open_app", name: "spotify", url: "spotify:search:" + q(m[1]) }) : say(`Searching ${m[1]} on YouTube.`, { type: "open_url", url: "https://www.youtube.com/results?search_query=" + q(m[1]) });
+    if ((m = low.match(/^(?:please\s+)?(?:search|google|look up)\s+(?:for\s+)?(.+)$/))) return say(`Searching ${m[1]}.`, { type: "search", query: m[1] });
+    if (/\b(take|click|capture)\s+(?:a\s+)?(?:photo|picture|selfie|pic)\b/.test(low)) return say("Opening the camera.", { type: "photo" });
+    if (num && /whats\s?app/.test(low)) return say("Opening WhatsApp.", { type: "whatsapp", number: num, body: body() });
+    if (num && /^(?:please\s+)?(?:call|dial|phone)\b/.test(low)) return say("Calling now.", { type: "call", number: num });
+    if (num && /\b(sms|text|message)\b/.test(low)) return say("Opening messages.", { type: "sms", number: num, body: body() });
+    if ((m = low.match(/^(?:please\s+)?(?:open|launch|start)\s+(?:the\s+)?(.+?)(?:\s+app)?[.!]?$/)) && APPS[m[1]]) return say(`Opening ${m[1]}.`, { type: "open_app", name: m[1], url: APPS[m[1]] });
+    if (/\b(flash ?light|torch)\b/.test(low)) { const off = /\b(off|stop|close)\b/.test(low); return say(off ? "Flashlight off." : "Flashlight on.", { type: "flashlight", on: !off }); }
+    if (/\bbattery\b/.test(low)) return { say: "", action: { type: "battery" }, local: true };
+    if (/\bwhat(?:'s| is)?\s+(?:the\s+)?time\b|\btime is it\b/.test(low)) return say("It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ".");
+    if (/\bwhat(?:'s| is)?\s+(?:the\s+)?(?:date|day)\b|\btoday'?s date\b/.test(low)) return say("Today is " + new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" }) + ".");
+    return null;
+  }
+
+  // Returns true (fully handled), a {say, action} result, or null (ask the AI).
+  function handleLocal(text) {
+    const t = text.trim(), lower = t.toLowerCase(); let m;
+    if (/\b(camera mode|open camera|turn on camera|start camera)\b/.test(lower)) { startCamera(); return true; }
+    if (/\b(voice mode|close camera|turn off camera|stop camera)\b/.test(lower)) { stopCamera(); return true; }
+    if (ringing && /\bsnooze\b/.test(lower)) { ringing.end(true); return true; }
+    if (ringing && /\b(stop|dismiss|off|cancel|enough|quiet)\b/.test(lower)) { ringing.end(false); return true; }
+    if (/\b(cancel|delete|clear|remove)\b.*\b(alarms?|timers?|reminders?)\b/.test(lower)) { const n = alarms.length; alarms = []; saveAlarms(); return say(n ? "All alarms and timers cancelled." : "You have no alarms or timers set."); }
+    if (/\b(show|list|check)\b.*\b(alarms?|timers?|reminders?)\b/.test(lower)) return say(alarms.length ? "You have " + alarms.map(x => `${x.label} at ${new Date(x.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`).join(", ") + "." : "You have no alarms or timers set.");
+    if (/^(stop|cancel|be quiet|quiet|enough)[.!]?$/.test(lower)) { interrupt(); return true; }
+    if (/\b(switch|change|reply|respond|speak|talk|answer)\b/.test(lower)) {
+      for (const key of Object.keys(LANGS)) {
+        if (new RegExp("\\b" + key + "\\b").test(lower)) { setLang(key); speak(`Okay, I will reply in ${LANGS[key].name}.`); return true; }
+      }
+    }
+    if ((m = t.match(/\b(?:my name is|you can call me|call me)\s+(?!back\b|later\b|tomorrow\b|now\b|when\b)([\p{L}][\p{L}'.\- ]{0,30})/iu))) {
+      const n = m[1].replace(/\s+(?:and|but|please|ok|okay)\b.*$/i, "").trim();
+      setName(n); return say(`Nice to meet you, ${n}! I'll remember your name.`);
+    }
+    if ((m = t.match(/^(?:please\s+)?(?:remember|note|save)(?:\s+that)?\s+(.+)$/i))) { remember(m[1]); return say("Got it, I'll remember that."); }
+    if (/\bwho\s+(?:am\s+i|i\s+am)\b|\bwhat(?:'s| is) my name\b|\bdo you know (?:me|my name)\b|\btell me my name\b/i.test(t)) return say(profile.name ? `You're ${profile.name}.` : "I don't know your name yet. Say: my name is, and then your name.");
+    if (/\bwhat do you (?:remember|know) about me\b/i.test(t)) return say(profile.name || profile.facts.length ? (profile.name ? "Your name is " + profile.name + ". " : "") + profile.facts.join(". ") : "I don't know anything about you yet.");
+    if (/\b(forget everything|clear (?:my )?memory|forget me)\b/i.test(t)) { profile = { name: "", facts: [] }; saveProfile(); return say("Done. I've forgotten everything about you."); }
+    return cmd(t);
+  }
+
+  // ================= ALARMS & TIMERS (they ring inside this page) =================
+  // A web page cannot create a real phone alarm (Chrome blocks the Clock app). These ring here with sound,
+  // vibration, voice and a Stop button while this page stays open with the screen on. Pending ones survive a reload.
+  let alarms = [], ringing = null, audioCtx = null, ringTimer = 0;
+  try { alarms = JSON.parse(store.get("legend_alarms", "[]")).filter(x => x && x.at > Date.now() - 900000); } catch {}
+  const saveAlarms = () => store.set("legend_alarms", JSON.stringify(alarms));
+  function unlockAudio() { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); } catch {} }
+  document.addEventListener("pointerdown", unlockAudio, { passive: true });
+  function beep() {
+    try {
+      unlockAudio(); const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "square"; o.frequency.value = 880; g.gain.value = 0.3; o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + 0.3);
+    } catch {}
+  }
+  function addAlarm(at, label) {
+    alarms.push({ at, label }); alarms.sort((x, y) => x.at - y.at); saveAlarms();
+    unlockAudio(); if (!wakeLock) keepAwake();
+  }
+  function ring(al) {
+    alarms = alarms.filter(x => x !== al); saveAlarms(); stopSpeech();
+    const box = document.createElement("div");
+    box.style.cssText = "position:fixed;inset:0;z-index:99;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:rgba(7,9,15,.97);color:#fff;font:600 28px system-ui,sans-serif;text-align:center;padding:24px";
+    box.innerHTML = '<div style="font-size:72px">⏰</div><div></div><div style="display:flex;gap:12px"><button class="btn primary" style="font-size:20px;padding:14px 28px">Stop</button><button class="btn" style="font-size:20px;padding:14px 28px">Snooze 5 min</button></div>';
+    box.children[1].textContent = al.label;
+    const end = snooze => {
+      clearInterval(ringTimer); box.remove(); ringing = null; if (navigator.vibrate) navigator.vibrate(0);
+      if (snooze) { addAlarm(Date.now() + 300000, al.label); addNote("Snoozed for 5 minutes."); }
+    };
+    const [stopB, snoozeB] = box.querySelectorAll("button");
+    stopB.onclick = () => end(false); snoozeB.onclick = () => end(true);
+    document.body.appendChild(box); ringing = { end };
+    const pulse = () => { beep(); if (navigator.vibrate) navigator.vibrate([400, 200, 400]); };
+    pulse(); ringTimer = setInterval(pulse, 1000);
+    addNote("⏰ " + al.label); speak(al.label + "!", "en-US");
+  }
+  function checkAlarms() { if (ringing || !alarms.length) return; const due = alarms.find(x => x.at <= Date.now()); if (due) ring(due); }
+  setInterval(checkAlarms, 1000);
+  if (alarms.length) keepAwake();
+
+  let torchStream = null;
+  async function torch(on) {
+    try {
+      let track = (camStream || torchStream)?.getVideoTracks()[0];
+      if (!track && on) { torchStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); track = torchStream.getVideoTracks()[0]; }
+      if (!track) return addNote("Flashlight is off.");
+      await track.applyConstraints({ advanced: [{ torch: on }] });
+      if (!on && torchStream) { torchStream.getTracks().forEach(t => t.stop()); torchStream = null; }
+      addNote(on ? "Flashlight on." : "Flashlight off.");
+    } catch {
+      if (torchStream) { torchStream.getTracks().forEach(t => t.stop()); torchStream = null; }
+      addNote("This browser can't control the flashlight. Chrome on Android can.");
+    }
+  }
+
+  // ================= DEVICE ACTIONS =================
+  const SAFE_HTTPS = u => { try { return new URL(u).protocol === "https:"; } catch { return false; } };
+  const q = s => encodeURIComponent(s || "");
+
+  function confirmAction(label, value) {
+    return new Promise(resolve => {
+      const card = document.createElement("div"); card.className = "action-card";
+      card.innerHTML = `<div class="k"></div><div class="v"></div><div class="btns"><button class="btn primary small ok">Run</button><button class="btn small no">Cancel</button></div>`;
+      card.querySelector(".k").textContent = "Legend wants to " + label;
+      card.querySelector(".v").textContent = value;
+      const done = val => { card.querySelectorAll("button").forEach(b => b.disabled = true); resolve(val); };
+      card.querySelector(".ok").onclick = () => done(true);
+      card.querySelector(".no").onclick = () => done(false);
+      chat.appendChild(card); scrollDown();
+    });
+  }
+
+  // Opens an app link and checks it: if this page never lost focus, the phone refused to open the app.
+  function launch(url, name, fallback) {
+    let left = false; const mark = () => { left = true; };
+    const off = () => { document.removeEventListener("visibilitychange", mark); window.removeEventListener("blur", mark); window.removeEventListener("pagehide", mark); };
+    document.addEventListener("visibilitychange", mark); window.addEventListener("blur", mark); window.addEventListener("pagehide", mark);
+    location.href = url;
+    setTimeout(() => {
+      off();
+      if (left || document.hidden) return;
+      if (fallback) return fallback();
+      addNote(`Couldn't open ${name} from the browser.`);
+    }, 1500);
+  }
+  // Tells you where you are as an address, not as numbers.
+  function whereAmI() {
+    if (!navigator.geolocation) return addNote("Location isn't supported here.");
+    statusEl.textContent = "Locating…";
+    navigator.geolocation.getCurrentPosition(async p => {
+      const la = p.coords.latitude, lo = p.coords.longitude; let place = "";
+      const get = async u => (await fetch(u, { signal: AbortSignal.timeout(7000) })).json();
+      try { place = (await get(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=en&lat=${la}&lon=${lo}`)).display_name || ""; } catch {}
+      if (!place) try { const j = await get(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${la}&longitude=${lo}&localityLanguage=en`); place = [j.locality, j.city, j.principalSubdivision, j.countryName].filter(Boolean).join(", "); } catch {}
+      const msg = place ? `You are at ${place}.` : "I found your position but couldn't get the address. Check your internet and try again.";
+      addBot(msg); speak(msg, "en-US"); setStatus();
+    }, () => { addNote("Location permission was denied. Allow it in Permissions."); setStatus(); }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
+  }
+
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); addNote("Copied."); }
+    catch { addNote("Copy failed. Allow clipboard in Permissions."); }
+  }
+
+  async function runAction(a) {
+    switch (a.type) {
+      case "open_url":
+        if (!SAFE_HTTPS(a.url)) return addNote("Blocked: only https links can be opened.");
+        window.open(a.url, "_blank", "noopener"); return addNote("Opened link.");
+      case "search":
+        window.open("https://www.google.com/search?q=" + q(a.query), "_blank", "noopener"); return addNote("Searched.");
+      case "map":
+        window.open("https://www.google.com/maps/search/?api=1&query=" + q(a.query), "_blank", "noopener"); return addNote("Opened map.");
+      case "call":
+        location.href = "tel:" + String(a.number).replace(/[^\d+]/g, ""); return addNote("Calling…");
+      case "sms":
+        location.href = "sms:" + String(a.number).replace(/[^\d+]/g, "") + "?body=" + q(a.body); return addNote("Opened messages.");
+      case "whatsapp": {
+        const num = String(a.number || "").replace(/[^\d]/g, "");
+        if (!num) return addNote("I need a phone number with country code for WhatsApp.");
+        launch(`whatsapp://send?phone=${num}&text=${q(a.body)}`, "WhatsApp", () => window.open(`https://wa.me/${num}?text=${q(a.body)}`, "_blank", "noopener"));
+        return addNote("Opening the WhatsApp chat. Tap Send there to deliver your message.");
+      }
+      case "email":
+        location.href = `mailto:${a.to}?subject=${q(a.subject)}&body=${q(a.body)}`; return addNote("Opened email.");
+      case "share":
+        if (navigator.share) { try { await navigator.share({ text: a.text }); } catch {} return; }
+        return copyText(a.text);
+      case "copy": return copyText(a.text);
+      case "alarm": case "timer": {
+        const at = a.at ? Number(a.at) : a.type === "timer" ? Date.now() + Math.max(1, Number(a.seconds) || 60) * 1000 : nextAt(parseInt(a.hour, 10) || 0, parseInt(a.minute, 10) || 0);
+        if (!(at > Date.now())) return addNote("That time has already passed.");
+        addAlarm(at, a.label || (a.type === "timer" ? "Timer" : "Alarm"));
+        return addNote("It rings inside this page. Keep Legend open with the screen on.");
+      }
+      case "notify":
+        if (Notification.permission !== "granted") return addNote("Notifications are off. Allow them in Permissions.");
+        try { new Notification(a.title || "Legend", { body: a.body || "" }); return addNote("Notification sent."); } catch { return addNote("🔔 " + (a.title || "Legend") + ": " + (a.body || "")); }
+      case "vibrate": if (navigator.vibrate) navigator.vibrate([120, 60, 120]); return;
+      case "battery": {
+        if (!navigator.getBattery) return addNote("Battery info isn't supported here.");
+        const b = await navigator.getBattery();
+        return addBot(`Battery is at ${Math.round(b.level * 100)}%${b.charging ? " and charging." : "."}`);
+      }
+      case "location": return whereAmI();
+      case "open_app": {
+        const name = String(a.name || "").toLowerCase(), url = a.url || APPS[name];
+        if (!url) return addNote("I don't know how to open " + (a.name || "that app") + " yet.");
+        if (!SAFE_APP_URL.test(url)) return addNote("Blocked an unsafe link.");
+        if (name === "whatsapp") return launch("whatsapp://send?text=%E2%80%8B", "WhatsApp", () => launch("intent://send/#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=https%3A%2F%2Fwa.me%2F;end", "WhatsApp"));
+        if (/^https:/i.test(url)) { location.href = url; return; }
+        return launch(url, a.name || "the app");
+      }
+      case "flashlight": return torch(a.on !== false && a.on !== "false");
+      case "remember": return remember(a.fact);
+      case "set_name": return setName(a.name);
+      case "photo": $("photoInput").click(); return;
+    }
+  }
+
+  // Adds a country code. A 10-digit number without one is treated as India (+91).
+  function normalizePhone(raw) {
+    const plus = String(raw || "").trim().startsWith("+");
+    const d = String(raw || "").replace(/\D/g, "");
+    if (plus) return "+" + d;
+    if (d.length === 10) return "+91" + d;
+    if (d.length === 11 && d.startsWith("0")) return "+91" + d.slice(1);
+    return d ? "+" + d : "";
+  }
+
+  function describe(a) {
+    const { type, ...rest } = a;
+    return Object.entries(rest).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `${k}: ${v}`).join("\n") || type;
+  }
+
+  $("photoInput").addEventListener("change", e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = document.createElement("div"); r.className = "row-msg user";
+    r.innerHTML = '<div class="bubble" style="padding:6px"><img style="width:200px;max-width:100%;border-radius:14px;display:block"></div>';
+    r.querySelector("img").src = URL.createObjectURL(f);
+    chat.appendChild(r); scrollDown();
+    addBot("Photo received.");
+    e.target.value = "";
+  });
+
+  // ================= SEND FLOW =================
+  // Actions that need a tap (the phone only allows opening other apps right after a touch).
+  const GESTURE = new Set(["open_url", "search", "map", "call", "sms", "whatsapp", "email", "open_app", "share", "copy", "photo"]);
+  async function doAction(a) {
+    if (["call", "sms", "whatsapp"].includes(a.type)) a.number = normalizePhone(a.number);
+    const active = navigator.userActivation && navigator.userActivation.isActive;
+    if (GESTURE.has(a.type) && !active && !(await confirmAction(a.type.replace("_", " "), describe(a)))) return addNote("Cancelled.");
+    await runAction(a);
+  }
+  // Latest question wins: a new one cancels the old request and speech, while the mic keeps listening.
+  async function send(text) {
+    text = (text || "").trim(); if (!text) return;
+    const my = ++reqId;
+    if (ctrl) ctrl.abort();
+    stopSpeech(); addUser(text);
+    busy = true; statusEl.textContent = "Thinking…";
+    let timedOut = false, timer = 0;
+    try {
+      let r = handleLocal(text);
+      if (r === true) return;
+      if (!r) {
+        const c = ctrl = new AbortController();
+        timer = setTimeout(() => { timedOut = true; c.abort(); }, 18000);
+        r = await callModel({ text, image: cameraOn ? grabFrame() : null, signal: c.signal });
+      }
+      if (my !== reqId) return;
+      if (r.say) { addBot(r.say); statusEl.textContent = "Speaking…"; speak(r.say, r.local ? "en-US" : undefined); }
+      if (r.action && r.action.type) { busy = false; setStatus(); await doAction(r.action); }
+    } catch (err) {
+      if (my === reqId) addNote(timedOut ? "That took too long. Please ask again." : "Error: " + (err instanceof TypeError ? "no internet connection." : err.message));
+    } finally {
+      clearTimeout(timer);
+      if (my === reqId) { busy = false; setStatus(); }
+    }
+  }
+
+  $("sendBtn").onclick = () => { const t = input.value.trim(); input.value = ""; send(t); };
+  input.addEventListener("keydown", e => { if (e.key === "Enter") { const t = input.value.trim(); input.value = ""; send(t); } });
+
+  // ================= TOGGLES =================
+  liveBtn.onclick = () => micBtn.onclick();
+  voiceBtn.onclick = () => {
+    voiceReply = !voiceReply;
+    voiceBtn.textContent = "Voice reply: " + (voiceReply ? "On" : "Off");
+    voiceBtn.classList.toggle("on", voiceReply);
+    if (!voiceReply && "speechSynthesis" in window) speechSynthesis.cancel();
+  };
+  $("clearBtn").onclick = () => {
+    interrupt(); history = []; log = []; lastNote = ""; chat.innerHTML = "";
+    persist();
+    render({ k: "n", t: "Conversation cleared." }); scrollDown();
+  };
+
+  // ================= PERMISSIONS =================
+  const PERMS = [
+    { key: "microphone", icon: "🎤", title: "Microphone", desc: "Hear your voice commands",
+      supported: () => !!navigator.mediaDevices?.getUserMedia,
+      request: async () => { const s = await navigator.mediaDevices.getUserMedia({ audio: true }); s.getTracks().forEach(t => t.stop()); } },
+    { key: "camera", icon: "📷", title: "Camera", desc: "Look at what you show Legend",
+      supported: () => !!navigator.mediaDevices?.getUserMedia,
+      request: async () => { const s = await navigator.mediaDevices.getUserMedia({ video: true }); s.getTracks().forEach(t => t.stop()); } },
+    { key: "geolocation", icon: "📍", title: "Location", desc: "Find places and your position",
+      supported: () => !!navigator.geolocation,
+      request: () => new Promise((res, rej) => navigator.geolocation.getCurrentPosition(() => res(), rej, { timeout: 15000 })) },
+    { key: "notifications", icon: "🔔", title: "Notifications", desc: "Timers and alerts",
+      supported: () => "Notification" in window,
+      request: async () => { if ((await Notification.requestPermission()) !== "granted") throw new Error("denied"); } },
+    { key: "contacts", icon: "👤", title: "Contacts", desc: "Pick someone to call or message",
+      supported: () => !!navigator.contacts?.select,
+      request: async () => { const r = await navigator.contacts.select(["name", "tel"], { multiple: false }); if (!r.length) throw new Error("none"); } },
+    { key: "vibration", icon: "📳", title: "Vibration", desc: "Haptic feedback",
+      supported: () => "vibrate" in navigator,
+      request: async () => { navigator.vibrate(60); } },
+    { key: "wakelock", icon: "💡", title: "Keep screen on", desc: "Stay awake during Live mode",
+      supported: () => "wakeLock" in navigator,
+      request: async () => { wakeLock = await navigator.wakeLock.request("screen"); } },
+    { key: "clipboard", icon: "📋", title: "Clipboard", desc: "Copy answers for you",
+      supported: () => !!navigator.clipboard?.writeText,
+      request: async () => { await navigator.clipboard.writeText("Legend Assistant ready"); } },
+    { key: "battery", icon: "🔋", title: "Battery", desc: "Check your battery level",
+      supported: () => !!navigator.getBattery,
+      request: async () => { await navigator.getBattery(); } },
+  ];
+
+  async function currentState(p) {
+    if (!p.supported()) return "unsupported";
+    if (p.key === "notifications") return Notification.permission;
+    if (["microphone", "camera", "geolocation"].includes(p.key) && navigator.permissions) {
+      try { return (await navigator.permissions.query({ name: p.key })).state; } catch {}
+    }
+    return store.get("legend_perm_" + p.key, "prompt");
+  }
+
+  async function renderPerms() {
+    const list = $("permList"); list.innerHTML = "";
+    const badges = { granted: ["granted", "Allowed"], denied: ["denied", "Blocked"], unsupported: ["unsupported", "Not supported"], prompt: ["", "Not set"] };
+    for (const p of PERMS) {
+      const state = await currentState(p);
+      const [cls, label] = badges[state] || badges.prompt;
+      const row = document.createElement("div"); row.className = "perm";
+      row.innerHTML = `<div class="ico">${p.icon}</div><div class="txt"><b>${p.title}</b><span>${p.desc}</span></div><span class="badge ${cls}">${label}</span>${state === "granted" || state === "unsupported" ? "" : '<button class="btn small primary">Allow</button>'}`;
+      const btn = row.querySelector("button");
+      if (btn) btn.onclick = async () => {
+        btn.disabled = true; btn.textContent = "…";
+        try { await p.request(); store.set("legend_perm_" + p.key, "granted"); addNote(p.title + " allowed"); }
+        catch { store.set("legend_perm_" + p.key, "denied"); addNote(p.title + " not allowed"); }
+        renderPerms();
+      };
+      list.appendChild(row);
+    }
+  }
+
+  function openPerms() { renderPerms(); $("permOverlay").classList.add("open"); }
+  $("permBtn").onclick = openPerms;
+  $("permClose").onclick = () => $("permOverlay").classList.remove("open");
+  $("permDone").onclick = () => $("permOverlay").classList.remove("open");
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    checkAlarms();
+    if (micOn || alarms.length) keepAwake();
+    if (micOn && !recog) startRecog();
+  });
+
+  if (!store.get("legend_onboarded", "")) { store.set("legend_onboarded", "1"); setTimeout(openPerms, 600); }
+  if (!SR) micBtn.style.opacity = ".5";
+
+  try { history = JSON.parse(store.get("legend_history", "[]")) || []; } catch { history = []; }
+  for (const e of log) render(e);
+  scrollDown();
+  setStatus();
+})();
+</script>
+</body>
+</html>
